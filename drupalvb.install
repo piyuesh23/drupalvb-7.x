@@ -1,0 +1,59 @@
+<?php
+// $Id: drupalvb.install,v 1.11 2009/02/01 02:00:25 sun Exp $
+
+/**
+ * @file
+ * Install, update and uninstall functions for the drupalvb module.
+ *
+ */
+
+/**
+ * Implements hook_schema().
+ */
+function drupalvb_schema() {
+  $schema['drupalvb_users'] = array(
+    'fields' => array(
+      'uid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'userid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    'primary key' => array('uid'),
+    'unique keys' => array(
+      'userid' => array('userid'),
+    ),
+  );
+
+  return $schema;
+}
+
+/**
+ * Implements hook_install().
+ */
+function drupalvb_install() {
+  // TODO The drupal_(un)install_schema functions are called automatically in D7.
+  // drupal_install_schema('drupalvb')
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function drupalvb_uninstall() {
+  // TODO The drupal_(un)install_schema functions are called automatically in D7.
+  // drupal_uninstall_schema('drupalvb')
+  // TODO Please review the conversion of this statement to the D7 database API syntax.
+  /* db_query("DELETE FROM {variable} WHERE name LIKE 'drupalvb_%%'") */
+  db_delete('variable')
+  ->condition('name', 'drupalvb_%%', 'LIKE')
+  ->execute();
+}
+
+

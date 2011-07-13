@@ -1,0 +1,1181 @@
+<?php
+// $Id: drupalvb.module,v 1.37 2011/01/09 04:59:56 sun Exp $
+
+/**
+ * @file
+ * Drupal vB module core functions for Drupal.
+ *
+ * Note: vBulletin only supports MySQL, queries have been optimized.
+ */
+
+require_once DRUPAL_ROOT . '/' . drupal_get_path('module', 'drupalvb') . '/drupalvb.inc.php';
+/**
+ * Implements hook_theme().
+ */
+function drupalvb_theme() {
+  return array(
+    'drupalvb_block_recent' => array(
+      'variables' => array('recent' => NULL, 'vb_options' => NULL),
+    ),
+    'drupalvb_block_recent_user' => array(
+      'variables' => array('recent' => NULL, 'vb_options' => NULL),
+    ),
+    'drupalvb_block_top_posters' => array(
+      'variables' => array('items' => array()),
+    ),
+    'drupalvb_username' => array(
+      'variables' => array('object' => NULL, 'class' => NULL),
+    ),
+    'drupalvb_settings_variables' => array(
+      'render element' => 'form',
+    ),
+  );
+}
+
+/**
+ * Implements hook_help().
+ */
+function drupalvb_help($path, $arg) {
+  switch ($path) {
+    case 'admin/config#description':
+      return t('Allows basic integration of Drupal with a vBulletin forum.');
+
+    case 'admin/config/drupalvb':
+      module_load_include('inc', 'drupalvb');
+      $vb_config = drupalvb_get('config');
+      $vb_options = drupalvb_get('options');
+      if (empty($vb_config)) {
+        return '';
+      }
+      $variables = array();
+      $attributes = array();
+      $variables['items'] = array(
+        l(t('View the Forum'), $vb_options['bburl']),
+        l(t('Forum Admin Control Panel'), $vb_options['bburl'] . '/' . $vb_config['Misc']['admincpdir']),
+        l(t('Forum Moderator Control Panel'), $vb_options['bburl'] . '/' . $vb_config['Misc']['modcpdir']),
+      );
+      $variables['type'] = 'ul';
+      $variables['title'] = 'Vbulliten integration';
+      $variables['attributes'] = $attributes;
+      return theme_item_list($variables);
+
+    case 'admin/help#drupalvb':
+//      return drupalvb_filter_FILTER_process(file_get_contents(dirname(__FILE__) . '/README.txt', 2, NULL));
+  }
+}
+
+/**
+ * Implementation of menu_hook().
+ */
+function drupalvb_menu() {
+  $items = array();
+
+  $items['admin/config/drupalvb'] = array(
+    'title' => 'Drupal vB integration',
+    'page callback' => 'drupalvb_settings',
+    'page arguments' => array('integration'),
+    'description' => 'Configure integration of Drupal with vBulletin forum.',
+    'access arguments' => array('administer drupalvb'),
+  );
+  $items['admin/config/drupalvb/integration'] = array(
+    'title' => 'Integration',
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => -10,
+  );
+  $items['admin/config/drupalvb/database'] = array(
+    'title' => 'Database',
+    'page callback' => 'drupalvb_settings',
+    'page arguments' => array('database'),
+    'access arguments' => array('administer drupalvb'),
+    'type' => MENU_LOCAL_TASK,
+  );
+  $items['admin/config/drupalvb/actions'] = array(
+    'title' => 'Actions',
+    'page callback' => 'drupalvb_settings',
+    'page arguments' => array('actions'),
+    'access arguments' => array('administer drupalvb'),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 10,
+  );
+  $items['admin/config/drupalvb/variables'] = array(
+    'title' => 'Variables',
+    'page callback' => 'drupalvb_settings',
+    'page arguments' => array('variables'),
+    'access arguments' => array('access devel information'),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 88,
+  );
+  $items['drupalvb/pms'] = array(
+    'page callback' => 'drupalvb_private_messages',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+  $items['drupalvb'] = array(
+    'page callback' => 'drupalvb_redirect',
+    'access callback' => 'drupalvb_acct_generation_access',
+    'type' => MENU_CALLBACK,
+  );
+  $items['drupalvb/login'] = array(
+    'page callback' => 'drupalvb_login',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  $items['drupalvb/logout'] = array(
+    'page callback' => 'drupalvb_logout',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  
+  return $items;
+}
+
+/**
+ * Form builder function for DrupalvB database connection.
+ */
+function drupalvb_settings($form = 'integration') {
+  $path = drupal_get_path('module', 'drupalvb');
+  module_load_include('inc', 'drupalvb');
+  module_load_include('inc', 'drupalvb', 'drupalvb.admin-pages');
+  return drupal_get_form('drupalvb_settings_' . $form);
+}
+
+/**
+ * Implements hook_user_login().
+ */
+function drupalvb_user_login(&$edit, $account) {
+  if (variable_get('drupalvb_dual_login', TRUE)) {
+//Log in a user in vB upon login in Drupal. 
+	module_load_include('inc', 'drupalvb');
+  	$result = drupalvb_db_query("SELECT u.userid, ub.liftdate FROM {user} u LEFT JOIN {userban} ub ON ub.userid = u.userid WHERE u.username = '%s' limit 0,1", drupalvb_htmlspecialchars($account->name));
+		$vbuser = $result->fetchAssoc();	
+	 
+		// Create account in vB if user does not exist.
+		if (!$vbuser) {			
+		  error_log('creating new drupal account');
+			$uid = drupalvb_create_user($account, (array) $account);			
+			error_log($uid);
+		  if (!$uid) {
+		    // Indicates duplicate username (should not happen).		   		    
+		    return FALSE;
+		  }
+		}
+		// Succeed if not banned, set last activity time and ensure user mapping.
+		else if (($vbuser['liftdate'] < REQUEST_TIME)) {						
+		  drupalvb_update_user($account, array());		  
+		}
+		// User is banned.
+		else {			
+		  return FALSE;
+		}
+		
+		$res = drupalvb_set_login_cookies($vbuser['userid']);
+		// Setup vB user session and cookies.
+		if (drupalvb_set_login_cookies($vbuser['userid'])) {			
+		  return TRUE;
+		}
+		else {
+		  drupal_set_message(t('Login to forums failed.'), 'error');
+		  watchdog('drupalvb', t('Login to forum failed for user %user.', array('%user' => $account->name)), WATCHDOG_ERROR);
+		  return FALSE;
+		}
+  }
+}
+
+/**
+ * Implements hook_user_logout().
+ */
+function drupalvb_user_logout($account) {
+	module_load_include('inc','drupalvb');
+  if (variable_get('drupalvb_dual_login', TRUE)) {  
+		$result = drupalvb_db_query("SELECT u.userid, ub.liftdate FROM {user} u LEFT JOIN {userban} ub ON ub.userid = u.userid WHERE u.username = '%s' limit 0,1", drupalvb_htmlspecialchars($account->name));
+		$vbuser = $result->fetchAssoc();		 
+		if ($vbuser) {
+		  // Remove all vB cookies for current user.
+		  drupalvb_clear_cookies($vbuser['userid']);
+		  watchdog('drupalvb', t('Forum session closed for user %username (@uid).', array('%username' => $vbuser['username'], '@uid' => $vbuser['userid'])));
+		}
+  }
+}
+
+/**
+ * Implements hook_form_alter().
+ *
+ * Validate the submitted values of user login forms before Drupal core invokes
+ * its regular form validation callback.
+ *
+ * Add a validation handler to the password recovery form to import a user from
+ * vB, should one exist there.
+ *
+ * @see drupalvb_user_pass_validate()
+ */
+function drupalvb_form_alter(&$form, $form_state, $form_id) {
+  if ($form_id == 'user_login_block' || $form_id == 'user_login') {    
+    error_log('inside drupalvb_form_alter');
+    module_load_include('inc', 'drupalvb');    
+    // Splice in our validate handler for authentication if user is performing
+    // a vBulletin login.    
+    if (!empty($form_state['input']['name']) && drupalvb_db_is_valid()) {
+      error_log('inside the condition');
+      $username = $form_state['input']['name'];    
+      error_log($username);
+      if ($vbuser = drupalvb_db_query("SELECT userid, password, salt, email FROM {user} WHERE username = '%s'", drupalvb_htmlspecialchars($username))->fetchAssoc()) {
+        $key = array_search('user_login_final_validate', $form['#validate']);
+        if ($key !== FALSE) {
+          array_splice($form['#validate'], $key, 0, 'drupalvb_login_validate');
+          error_log('login validate added');
+        }
+        else {
+          // Another module altered the validation sequence before us, not sure
+          // how to properly handle this case...
+          error_log('else condition');
+          $form['#validate'] = array('drupalvb_login_validate') + $form['#validate'];
+        }
+      }
+    }
+  }
+  else if ($form_id == 'user_pass') {
+    $form['#validate'] = array_merge(array('drupalvb_user_pass_validate'), $form['#validate']);
+  } 
+}
+
+/**
+ * Validate login against vBulletin user database.
+ */
+function drupalvb_login_validate($form, &$form_state) {
+	error_log('inside login_validate function');	
+  global $user;
+  if (!variable_get('drupalvb_dual_login', TRUE)) {    
+    return;
+  }
+  if ($user->uid) {        
+    return;
+  }
+  
+  $username = $form_state['values']['name'];  
+  $password = trim($form_state['values']['pass']);
+  error_log($username);
+  if (empty($username) || empty($password)) {
+    error_log('empty uname');
+    return;
+  }
+
+  // If this user already exists in Drupal, no further validation required.
+  $finduser = array_shift(user_load_multiple(array(), array('name' => $username)));
+  
+  if ($finduser && $finduser->uid) {
+    error_log('drupal user dound');
+    return TRUE;
+  }
+
+  module_load_include('inc', 'drupalvb');
+  if (!drupalvb_db_is_valid()) {    
+    return;
+  }
+  if ($vbuser = drupalvb_db_query("SELECT userid, username, password, salt, email, joindate FROM {user} WHERE username = '%s'", drupalvb_htmlspecialchars($username))->fetchAssoc()) {
+    // Rebuild the password.
+    error_log('vbuser');
+    $vbpassword = md5(md5($password) . $vbuser['salt']);
+    if ($vbuser['password'] === $vbpassword) {
+      // We have a valid vBulletin account, so try to lookup this user in the
+      // mapping table. If a mapping exists, then user_authenticate() didn't
+      // find a user with the given password, otherwise we wouldn't be here.
+      // This can happen if the user has been temporarily created by
+      // drupalvb_redirect().              
+
+      if ($uid = drupalvb_uid_load($vbuser['userid'])) {
+        // Only update the password of the existing Drupal user record.
+        error_log('use mil gya');
+        $account = user_load($uid);
+        $userinfo['pass'] = $password;
+        $user = user_save($account, $userinfo);
+      }
+      else {
+        // This user is completely unknown to Drupal, register a new account.
+        // Fall back on the user submitted user name if the vBulletin name
+        // contains encoded &amp;'s.
+        $username = (strpos($vbuser['username'], '&amp;') === FALSE ? $vbuser['username'] : $username);
+        $userinfo = array(
+          'name' => $username,
+          'pass' => $password,
+          'mail' => $vbuser['email'],
+          'init' => $username,
+          'created' => $vbuser['joindate'],
+          'status' => 1,
+          'vbuser' => 1,
+        );
+        $user = user_save('', $userinfo);        
+        // Update the mapping table.
+        drupalvb_set_mapping($user->uid, $vbuser['userid']);
+        drupal_set_message('User '.$user->name.'added to drupal from Vbulliten.');
+        drupal_goto('/user/'.$user->uid);
+      }      
+      return TRUE;
+    }
+  }
+}
+
+/**
+ * Validation handler for the password recovery form.
+ *
+ * Create a non-existent Drupal user if one with the requested username or mail
+ * exists in vB.  Note that the user_pass form asks the user to enter a username
+ * OR email address in one form field internally called 'name'.
+ *
+ * @see user_pass_validate()
+ */
+function drupalvb_user_pass_validate($form, $form_state) {
+  $name = $form_state['values']['name'];
+
+  // Return if the given user exists in Drupal.
+  if (array_shift(user_load_multiple(array(), array('name' => $name))) || array_shift(user_load_multiple(array(), array('mail' => $name)))) {
+    return;
+  }
+
+  module_load_include('inc', 'drupalvb');
+
+  // Try to import a corresponding user from vB.
+  if ($userid = drupalvb_db_query("SELECT userid FROM {user} WHERE username = '%s' OR email = '%s'", drupalvb_htmlspecialchars($name), $name)->fetchAssoc()) {
+    drupalvb_lookup_drupal_user($userid);
+  }
+}
+
+/**
+ * Try to lookup a Drupal user account for a vBulletin user id, using the mapping
+ * table.
+ *
+ * @param $userid
+ *   A vBulletin user id.
+ */
+
+function drupalvb_uid_load($userid) {		
+  return db_query("SELECT uid FROM {drupalvb_users} WHERE userid = '%d'",array($userid))->fetchAssoc();
+}
+
+/**
+ * Implements hook_user_presave().
+ */
+function drupalvb_user_presave(&$edit, $account, $category) {
+  if(empty($edit['vbuser'])){    
+    if ($category == 'account' && (variable_get('drupalvb_acct_generation', TRUE) || variable_get('drupalvb_acct_sync', TRUE))) {
+      return drupalvb_user_validate(arg(1), $edit);
+    }  
+    if (variable_get('drupalvb_acct_sync', TRUE)) {
+      return drupalvb_user_update($account, $edit);
+    }
+  }
+}
+
+
+/**
+ * Implements hook_user_insert().
+ */
+function drupalvb_user_insert(&$edit, $account, $category) {
+  if (variable_get('drupalvb_acct_generation', TRUE)) {
+		global $user;				
+		if ($userid = drupalvb_create_user($account, $edit)) {
+		  // Prevent overriding cookies of administrators.
+		  if(!empty($user->name)){
+				if ($edit['name'] == $user->name) {
+				  drupalvb_set_login_cookies($userid);
+				}
+			}
+		}
+  }
+}
+
+/**
+ * Implements hook_user_cancel().
+ */
+function drupalvb_user_cancel($edit, $account, $method) {
+  if (variable_get('drupalvb_acct_sync', TRUE)) {
+    return drupalvb_user_delete($account);
+  }
+}
+
+/**
+ * Ensure a username or e-mail address does not already exist in vB.
+ */
+function drupalvb_user_validate($uid, &$edit) {
+	module_load_include('inc','drupalvb');
+  $userid = db_query("SELECT userid FROM {drupalvb_users} WHERE uid = :uid", array(':uid' => $uid))->fetchField();
+  // Validate the username.
+  if (arg(1) == 'register' || user_access('change own username') || user_access('administer users')) {
+    if (drupalvb_db_query("SELECT userid FROM {user} WHERE userid <> %d AND LOWER(username) = LOWER('%s') limit 0,1", $userid, drupalvb_htmlspecialchars($edit['name']))->fetchAssoc()) {
+      form_set_error('name', t('The name %name is already taken.', array('%name' => $edit['name'])));
+    }
+  }
+
+  // Validate the e-mail address.
+  if (drupalvb_db_query("SELECT userid FROM {user} WHERE userid <> %d AND LOWER(email) = LOWER('%s') limit 0,1", $userid, drupalvb_htmlspecialchars($edit['mail']))->fetchAssoc()) {    
+    form_set_error('mail', t('The e-mail address %email is already registered. <a href="@password">Have you forgotten your password?</a>', array('%email' => $edit['mail'], '@password' => url('user/password'))));
+  }
+}
+
+
+/**
+ * Update a user in vB upon update in Drupal.
+ *
+ * @see drupalvb_user()
+ */
+function drupalvb_user_update($account, $edit) {
+  global $user;
+
+  // Update data if user exists.
+  if ($vbuser = drupalvb_db_query("SELECT userid, salt FROM {user} WHERE username = '%s' limit 0,1", drupalvb_htmlspecialchars($account->name))->fetchAssoc()) {
+    // Merge current username, salt, and finally edited values into one array,
+    // so usernames may be altered (if allowed).
+    drupalvb_update_user($account, array_merge(array('name' => $account->name), $vbuser, $edit));
+  }
+  // If not, create a new user in vB.
+  else {
+    if (!$vbuser['userid'] = drupalvb_create_user($account, array_merge(array('name' => $account->name), $edit))) {
+      // Indicates duplicate username (should not happen).
+      return;
+    }
+  }
+
+  // Prevent overriding cookies of administrators.
+  if ($account->name == $user->name) {
+    drupalvb_set_login_cookies($vbuser['userid']);
+  }
+}
+
+/**
+ * Delete a user in vB upon deletion in Drupal.
+ *
+ * @see drupalvb_user()
+ */
+function drupalvb_user_delete($account) {
+  // If vBulletin user exists, delete user account, session and profile data.
+  if ($userid = drupalvb_db_query("SELECT userid FROM {user} WHERE username = '%s'", drupalvb_htmlspecialchars($account->name))->fetchAssoc()) {
+    drupalvb_db_query("DELETE FROM {session} WHERE userid = %d", $userid);
+    drupalvb_db_query("DELETE FROM {user} WHERE userid = %d", $userid);
+    drupalvb_db_query("DELETE FROM {userfield} WHERE userid = %d", $userid);
+    drupalvb_db_query("DELETE FROM {usertextfield} WHERE userid = %d", $userid);
+  }
+  // Delete from mapping table.
+  // TODO Please review the conversion of this statement to the D7 database API syntax.
+  /* db_query("DELETE FROM {drupalvb_users} WHERE uid = %d", $account->uid) */
+  db_delete('drupalvb_users')
+  ->condition('uid', $account->uid)
+  ->execute();
+}
+
+/**
+ * Log in a user; menu callback.
+ *
+ * This is required for login forms embedded in vBulletin, to ensure a user is
+ * properly logged in into both systems.
+ */
+function drupalvb_login() {
+  global $user;
+  if ($_POST['name']) {
+    $form_state = array('values' => $_POST);
+    if ($user->uid) {
+      // If the user is already logged in to Drupal, we ensure the same for
+      // vBulletin.    
+
+      if (drupalvb_login_validate(array(), $form_state)) {
+         drupal_goto(!empty($_REQUEST['destination']) ? $_REQUEST['destination'] : 'user/'. $user->uid);
+      }
+      else {
+        // Where do we go from here? user/login won't work, as the user is
+        // already authenticated in Drupal.
+         unset($_REQUEST['destination']);
+        drupal_goto(variable_get('site_frontpage', 'node'));
+      }
+    }
+    else {
+      // Otherwise perform the full login procedure.
+      foreach (user_login_default_validators() as $validator) {
+        $validator(array(), $form_state);
+      }
+      if (!form_get_errors()) {
+        user_login_submit(array(), $form_state);
+        $redirect = (isset($form_state['redirect']) ? $form_state['redirect'] : '');
+        drupal_goto(!empty($_REQUEST['destination']) ? $_REQUEST['destination'] : $redirect);
+      }
+      else {
+        // Login failed: send back to login form.
+//        unset($_REQUEST['destination']);
+        drupal_goto(!empty($_REQUEST['destination']) ? $_REQUEST['destination'] : 'user/login');
+      }
+    }
+  }
+}
+
+/**
+ * Log out a user (ensuring a logout in vBulletin); menu callback.
+ *
+ * This is required in cases a user manages to log out from Drupal, but not
+ * from vBulletin (due to stale cookies or any other possible event).
+ *
+ * @see drupalvb_user_logout()
+ */
+function drupalvb_logout() {
+  global $user;
+  module_load_include('inc', 'drupalvb');
+  module_load_include('inc', 'user', 'user.pages');
+
+  if ($user->uid) {
+    if (module_exists('singlesignon')) {
+      _singlesignon_session_logout($user->uid);
+    }
+
+    // If user is logged on in Drupal, we just invoke the regular logout
+    // procedure, which will invoke drupalvb_user_logout().
+        //user_logout();
+    ///Code mOdified by Ritesh in order to redirect the user to forums page
+    /*
+    * Starts from here
+    */
+    drupalvb_user_logout($user);
+    global $user;
+
+    watchdog('user', 'Session closed for %name.', array('%name' => $user->name));
+
+    // Destroy the current session:
+    session_destroy();
+    // Only variables can be passed by reference workaround.
+    $null = NULL;
+    user_module_invoke('logout', $null, $user);
+
+    // Load the anonymous user
+    $user = drupal_anonymous_user();
+    drupal_goto(!empty($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER'] : $redirect);
+     /*
+      * Ends here
+      */
+  }
+  else {
+    // If there is no user session in Drupal for the user trying to logout,
+    // something went wrong and we can only invalidate the user's cookies.
+    drupalvb_clear_cookies();
+    drupal_goto('');
+  }
+}
+
+/**
+ * Implements hook_panels_include_directory().
+ */
+function drupalvb_panels_include_directory($plugintype) {
+  switch ($plugintype) {
+    case 'content_types':
+      return $plugintype;
+  }
+}
+
+
+/**
+ * Implements hook_block_configure().
+ */
+function drupalvb_block_configure($delta) {
+  if (TRUE) {
+    $form = array();
+    switch ($delta) {
+      case 'recent':
+        $form['drupalvb_block_recent_type'] = array(
+          '#type' => 'radios',
+          '#title' => t('Type of displayed items'),
+          '#default_value' => variable_get('drupalvb_block_recent_type', 'threads'),
+          '#options' => array(
+            'threads' => t('Recent forum threads'),
+            'posts' => t('Recent forum posts'),
+          ),
+          '#description' => t('Please choose whether the block should display recent threads or posts.'),
+        );
+        $form['drupalvb_block_recent_count'] = array(
+          '#type' => 'select',
+          '#title' => t('Number of items'),
+          '#default_value' => variable_get('drupalvb_block_recent_count', 5),
+          '#options' => drupal_map_assoc(range(1, 12)),
+        );
+        $form['drupalvb_block_recent_limit'] = array(
+          '#type' => 'select',
+          '#title' => t('Timeframe threshold'),
+          '#default_value' => variable_get('drupalvb_block_recent_limit', 7),
+          '#options' => drupal_map_assoc(array_merge(range(1, 8), range(14, 30, 7), range(30, 360, 30))),
+          '#description' => t('How many days back you want the recent posts/threads to include.'),
+        );
+        $form['drupalvb_block_recent_authors'] = array(
+          '#type' => 'checkbox',
+          '#title' => t('Display author names'),
+          '#default_value' => variable_get('drupalvb_block_recent_authors', 0),
+          '#return_value' => 1,
+          '#description' => t('Enable this option to display author names for recent threads/posts.'),
+        );
+        return $form;
+
+      case 'user':
+        $form['drupalvb_block_user'] = array(
+          '#type' => 'checkboxes',
+          '#title' => t('Display Options'),
+          '#default_value' => variable_get('drupalvb_block_user', drupal_map_assoc(array('newposts', 'recent', 'online', 'pms'))),
+          '#options' => array(
+            'newposts' => t('New posts (since last visit)'),
+            'recent' => t('Recent posts (last 24 hours)'),
+            'online' => t('Users online'),
+            'pms' => t('New private messages'),
+          ),
+          '#description' => t('Please select which information should be displayed in the user info block.'),
+        );
+        return $form;
+
+      case 'stats':
+        $form['drupalvb_block_stats'] = array(
+          '#type' => 'checkboxes',
+          '#title' => t('Display Options'),
+          '#default_value' => variable_get('drupalvb_block_stats', drupal_map_assoc(array('threads', 'posts', 'tmembers', 'amembers'))),
+          '#options' => array(
+            'threads' => t('Total Threads'),
+            'posts' => t('Total Posts'),
+            'tmembers' => t('Total Members'),
+            'amembers' => t('Active Members'),
+          ),
+          '#description' => t('Choose what information is shown in the Forum Admin block.'),
+        );
+        return $form;
+    }
+  }
+}
+
+/**
+ * Implements hook_block_save().
+ */
+function drupalvb_block_save($delta, $edit) {
+  if (TRUE) {
+    if ($delta == 'recent') {
+      variable_set('drupalvb_block_recent_type', $edit['drupalvb_block_recent_type']);
+      variable_set('drupalvb_block_recent_count', $edit['drupalvb_block_recent_count']);
+      variable_set('drupalvb_block_recent_limit', $edit['drupalvb_block_recent_limit']);
+      variable_set('drupalvb_block_recent_authors', $edit['drupalvb_block_recent_authors']);
+    }
+    else {
+    	if(!empty($edit['drupalvb_block_' . $delta]))
+	      variable_set('drupalvb_block_' . $delta, $edit['drupalvb_block_' . $delta]);
+    }
+  }
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function drupalvb_block_view($delta) {  
+  	global $user;
+    module_load_include('inc', 'drupalvb');
+    $block = array();
+    if (!drupalvb_db_is_valid()) {
+      return $block;
+    }
+    switch ($delta) {
+      case 'recent':
+        $display = variable_get('drupalvb_block_recent_type', 'threads');
+        $block['subject'] = ($display == 'threads' ? t('Recent forum threads') : t('Recent forum posts'));
+        $block['content'] = drupalvb_block_recent($display);
+        return $block;
+
+      case 'recent_user':
+        if (arg(0) != 'user' && !is_numeric(arg(1))) {
+          return $block;
+        }
+        $account = user_load(arg(1));
+        $block['subject'] = t('Recent forum posts by %name', array('%name' => $account->name));
+        $block['content'] = drupalvb_block_recent_user($account);
+        return $block;
+
+      case 'top_posters':
+        $block['subject'] = t('Top forum posters');
+        $block['content'] = drupalvb_block_top_posters();
+        return $block;
+
+      case 'user':
+        if (!user_access('access content') || $user->uid < 1) {
+          return $block;
+        }
+        $block['subject'] = t('Forum info');
+        $block['content'] = drupalvb_block_inform();
+        return $block;
+
+      case 'stats':
+        $block['subject'] = t('Forum statistics');
+        $block['content'] = drupalvb_block_stats();
+        return $block;
+    }  
+}
+
+/**
+ * Build data for recent threads/posts block.
+ *
+ * @param $display
+ *   The type of data to display, 'threads' or 'posts'.
+ */
+function drupalvb_block_recent($display) {
+  $date_cut   = REQUEST_TIME - (variable_get('drupalvb_block_recent_limit', 7) * 86400);
+  $num_items  = variable_get('drupalvb_block_recent_count', 5);
+  $vb_options = drupalvb_get('options');
+  switch ($display) {
+    case 'threads':
+      $result = drupalvb_db_query("SELECT t.threadid, t.title, t.replycount, t.dateline AS created, t.postuserid AS userid, t.postusername AS name FROM {thread} t INNER JOIN {forum} f ON f.forumid = t.forumid WHERE f.showprivate = 0 AND t.lastpost >= %d ORDER BY t.dateline DESC LIMIT %d", $date_cut, $num_items);
+      break;
+
+    case 'posts':
+      $result = drupalvb_db_query("SELECT p.postid, p.title, p.threadid, p.dateline AS created, p.userid, p.username AS name, t.title AS threadtitle FROM {post} p LEFT JOIN {thread} t ON p.threadid = t.threadid WHERE p.dateline >= %d ORDER BY p.dateline DESC LIMIT %d", $date_cut, $num_items);
+      break;
+  }
+  $items = $userids = array();
+  if($display == 'threads')
+	  $res = $result->fetchAllAssoc('threadid', PDO::FETCH_ASSOC);
+	elseif($display == 'posts')
+		$res = $result->fetchAllAssoc('postid',PDO::FETCH_ASSOC);
+  foreach($res as $data) {
+		if ($data['title'] == '') {
+		    $data['title'] = t('Re:') . ' ' . $data['threadtitle'];
+		  }
+		  $data['title'] = decode_entities($data['title']);
+		  $data['url'] = $vb_options['bburl'] . '/showthread.php';
+		  $data['query'] = 't=' . $data['threadid'];
+		  $data['fragment'] = (isset($data['postid']) ? $data['postid'] : NULL);
+		  $items[] = $data;
+		  // Store mapping of vB userids.
+		  if (!isset($userids[$data['userid']])) {
+		    $userids[$data['userid']] = array();
+		  }
+		  $userids[$data['userid']][] = count($items) - 1;
+  }
+
+  // Try to find matching Drupal uids. These might not exist yet,
+  // theme_drupalvb_username() takes care of that.
+  if ($userids) {
+    // TODO Please convert this statement to the D7 database API syntax.
+    $result = db_query("SELECT d.userid, d.uid, u.picture FROM {drupalvb_users} d INNER JOIN {users} u ON u.uid = d.uid WHERE d.userid IN (" . implode(',', array_keys($userids)) . ")");
+    $res = $result->fetchAllAssoc('userid',PDO::FETCH_ASSOC);
+    foreach($res as $data) {
+      foreach ($userids[$data['userid']] as $i) {
+        $items[$i] = array_merge($items[$i], $data);
+      }
+    }
+  }
+  return theme('drupalvb_block_recent', array('recent' => $items, 'vb_options' => $vb_options));
+}
+/**
+ * Generate HTML for Recent threads/posts block.
+ *
+ * @todo Unused $recent['replycount'] for threads.
+ */
+function theme_drupalvb_block_recent($variables) {
+  $recent = $variables['recent'];
+  $vb_options = $variables['vb_options'];
+  $items = array();
+  $display_authors = variable_get('drupalvb_block_recent_authors', 0);
+  foreach ($recent as $item) {
+    $link = l($item['title'], $item['url'], array('query' => $item['query'], 'fragment' => $item['fragment']));
+    $items[] = ($display_authors ? t('!title <span>by !name</span>', array('!title' => $link, '!name' => theme('drupalvb_username', array('object' => (object) $item)))) : $link);
+  }
+  $output = theme('item_list', array('items' => $items));
+  $output .= '<div class="forum-link">' . l(t('Visit the forum'), $vb_options['bburl']) . '</div>';
+  return $output;
+}
+
+/**
+ * Build data for recent posts by user block.
+ */
+function drupalvb_block_recent_user($account) {
+  if ($vbuserid = db_query("SELECT userid FROM {drupalvb_users} WHERE uid = :uid", array(':uid' => $account->uid))->fetchAssoc()) {
+    $num_items  = variable_get('drupalvb_block_recent_count', 5);
+    $vb_options = drupalvb_get('options');
+    $result = drupalvb_db_query("SELECT p.postid, p.title, p.threadid, p.dateline AS created, p.userid, p.username AS name, t.title AS threadtitle, p.pagetext AS body FROM {post} p INNER JOIN {thread} t ON p.threadid = t.threadid INNER JOIN {forum} f ON f.forumid = t.forumid WHERE f.showprivate = 0 AND p.userid = %d GROUP BY p.threadid ORDER BY p.dateline DESC LIMIT %d", $vbuserid, $num_items);
+    $items = array();
+    $res = $result->fetchAllAssoc('postid',PDO::FETCH_ASSOC);
+    foreach($res as $data) {
+      if ($date['title'] == '') {
+        $data['title'] = t('Re:') .' '. $data['threadtitle'];
+        $data['body'] = preg_replace('@\[ [^\]]+ \]@x', '', $data['body']);
+        $data['title'] = truncate_utf8($data['body'], 80);
+      }
+      $data['title'] = decode_entities($data['title']);
+      $data['threadtitle'] = decode_entities($data['threadtitle']);
+      $data['url'] = $vb_options['bburl'] . '/showthread.php';
+      $data['query'] = 't=' . $data['threadid'];
+      $data['fragment'] = (isset($data['postid']) ? $data['postid'] : NULL);
+      $items[$data['postid']] = $data;
+    }
+    return theme('drupalvb_block_recent_user', array('recent' => $items, 'vb_options' => $vb_options));
+  }
+}
+
+/**
+ * Generate a block containing top form posters.
+ */
+function drupalvb_block_top_posters() {
+  $items = array();
+  $num_items = variable_get('drupalvb_block_recent_count', 5);
+  $result = drupalvb_db_query("SELECT posts AS count, userid, username AS name FROM {user} ORDER BY posts DESC limit 0,$num_items");
+  $res = $result->fetchAllAssoc('userid', PDO::FETCH_ASSOC);
+  foreach($res as $data) {
+    $items[$data['userid']] = $data;
+  }
+
+  // TODO Please convert this statement to the D7 database API syntax.
+  $result = db_query("SELECT d.userid, d.uid, u.picture FROM {drupalvb_users} d INNER JOIN {users} u ON u.uid = d.uid WHERE d.userid IN (" . implode(',', array_keys($items)) . ")");
+  $res = $result->fetchAllAssoc('userid', PDO::FETCH_ASSOC);
+  foreach($res as $data) {
+    $items[$data['userid']] = array_merge($items[$data['userid']], $data);
+  }
+  return theme('drupalvb_block_top_posters', array('items' => $items));
+}
+
+/**
+ * Render top forum posters block.
+ *
+ * @param $items
+ *   An array of users.
+ */
+function theme_drupalvb_block_top_posters($variables) {
+  $items = $variables['items'];
+  foreach ($items as $key => $item) {
+    $items[$key] = theme('drupalvb_username', array('object' => (object) $item, 'class' => 'custom_toplist_posts')) . ' <span class="count">' . format_plural($item['count'], 'wrote <span>1 post</span>', 'wrote <span>@count posts</span>') . '</span>';
+  }
+  return theme('item_list', array('items' => $items));
+}
+
+/**
+ * Build contents for the forum user info block.
+ */
+function drupalvb_block_inform() {
+  global $user;
+	module_load_include('inc','drupalvb');
+  $vb_options = drupalvb_get('options');
+  $display = variable_get('drupalvb_block_user', drupal_map_assoc(array('online', 'recent', 'newposts', 'pms')));
+  $header = array(array(
+      'data' => l($vb_options['bbtitle'], $vb_options['bburl']),
+      'colspan' => 2,
+    ));
+  
+  $rows = array();
+  if ($display['newposts']) {
+    $rows[] = array(
+      l(t('New posts'), $vb_options['bburl'] . '/search.php?do=getnew'),
+      drupalvb_get_recent_posts(),
+    );
+  }
+  if ($display['recent']) {
+    $rows[] = array(
+      l(t('Recent posts'), $vb_options['bburl'] . '/search.php?do=getdaily'),
+      drupalvb_get_recent_posts('daily'),
+    );
+  }
+  if ($display['online']) {
+    $users_online = drupalvb_get_users_online();
+    $rows[] = array(
+      l(t('Users online'), $vb_options['bburl'] . '/online.php'),
+      $users_online['guests'] + $users_online['members'],
+    );
+  }
+  if ($display['pms']) {
+    $vbuser = drupalvb_db_query("SELECT pmtotal, pmunread FROM {user} WHERE username = '%s'", drupalvb_htmlspecialchars($user->name))->fetchAssoc();
+    $rows[] = array(
+      l(t('New private messages'), 'drupalvb/pms'),
+      (int) $vbuser['pmunread'],
+    );
+  }
+  return theme('table', array('header' => $header, 'rows' => $rows));
+}
+/**
+ * Generate HTML for Recent threads/posts block.
+ *
+ * @todo Unused $recent['replycount'] for threads.
+ */
+function theme_drupalvb_block_recent_user($variables) {
+  $recent = $variables['recent'];
+  $vb_options = $variables['vb_options'];
+  $items = array();
+  foreach ($recent as $item) {
+    $link_post = l($item['title'], $item['url'], array('query' => $item['query'], 'fragment' => $item['fragment']));
+    $link_thread = l($item['threadtitle'], $item['url'], array('query' => $item['query']));
+    $items[] = t('<span class="drupalvb-post">!title</span> <span class="drupalvb-thread">Thread: !thread</span>', array('!title' => $link_post, '!thread' => $link_thread));
+  }
+  return theme('item_list', array('items' => $items));
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function drupalvb_block_info() {  
+    $blocks = array();
+    $blocks['recent']['info'] = t('vBulletin: Recent forum threads/posts');
+    $blocks['recent_user']['info'] = t('vBulletin: Recent posts by user (user account)');
+    $blocks['top_posters']['info'] = t('vBulletin: User list of top forum posters');
+    $blocks['user']['info'] = t('vBulletin: User info');
+    $blocks['stats']['info'] = t('vBulletin: Overall statistics');
+    return $blocks;  
+}
+
+/**
+ * Build contents for the forum statistics block.
+ */
+function drupalvb_block_stats() {
+  // Get total threads & posts.
+  $totalthreads = $totalposts = 0;
+  $result = drupalvb_db_query("SELECT forumid, title, threadcount, replycount FROM {forum}");
+  $res = $result->fetchAllAssoc('forumid');
+  foreach($res as $forum) {
+    $totalthreads += $forum->threadcount;
+    $totalposts += $forum->replycount;
+  }
+  // Get user statistics.
+  $result = drupalvb_db_query("SELECT data FROM {datastore} WHERE title = 'userstats'");
+  $data = $result->fetchAssoc();
+  $userstats = unserialize($data['data']);
+  $display = variable_get('drupalvb_block_stats', array('threads' => '1', 'posts' => '1', 'tmembers' => '1', 'amembers' => '1'));
+
+  $rows = array();
+  if ($display['posts']) {
+    $rows[] = array(t('Total Posts:'), $totalposts);
+  }
+  if ($display['threads']) {
+    $rows[] = array(t('Total Threads:'), $totalthreads);
+  }
+  if ($display['tmembers']) {
+    $rows[] = array(t('Total Members:'), $userstats['numbermembers']);
+  }
+  if ($display['amembers']) {
+    $rows[] = array(t('Active Members:'), $userstats['activemembers']);
+  }
+  return theme('table', array('header' => array(), 'rows' => $rows));
+}
+
+/**
+ * Formats a Drupal or vBulletin username.
+ *
+ * @param $object
+ *   The user object to format. Should contain either a vBulletin userid, or
+ *   a Drupal uid, if available.
+ * @param $class
+ *   A class name for User Display API.
+ */
+function theme_drupalvb_username($variables) {
+  $object = $variables['object'];
+  $class = $variables['class'];
+  if ($object && !empty($object->uid) && $object->name) {
+    // Drupal account exists: fall back on default theming.
+    // TODO Please change this theme call to use an associative array for the $variables parameter.
+    $output = theme('username', $object, $class);
+  }
+  else if ($object && !empty($object->userid) && $object->name) {
+    // Remove any html entities injected by vBulletin.
+    $object->name = decode_entities($object->name);
+    // Drupal account doesn't exists yet. Link to it using our redirector,
+    // which will create the account on the fly.
+    if (drupal_strlen($object->name) > 20) {
+      $name = drupal_substr($object->name, 0, 15) . '...';
+    }
+    else {
+      $name = $object->name;
+    }
+    if (user_access('access user profiles')) {
+      $output = l($name, 'drupalvb/user/' . $object->userid, array('title' => t('View user profile.')));
+    }
+    else {
+      $output = check_plain($name);
+    }
+  }
+  else {
+    $output = variable_get('anonymous', t('Anonymous'));
+  }
+  return $output;
+}
+
+/**
+ * Render a page containing (vB) private messages of a user.
+ */
+function drupalvb_private_messages() {
+  global $user;
+  module_load_include('inc', 'drupalvb');
+
+  $vb_options = drupalvb_get('options');
+
+  $output = '<p>' . t("Below is a list of private messages you have received.  You may click on a user's name to see their profile, a message's title to view it, or a reply link to message the user in return.") . '</p>';
+  $output .= l('View your inbox.', $vb_options['bburl'] . '/private.php');
+
+  $result = drupalvb_db_query("SELECT userid, username FROM {user} WHERE username = '%s'", drupalvb_htmlspecialchars($user->name));
+
+  // If user exists, then grab and display a list of PMs.
+  if ($userinfo = $result->fetchAssoc()) {
+    // Format a table with the results.
+    $header = array(
+      array(
+        'data' => t('From'),
+        'width' => '75',
+      ),
+      array(
+        'data' => t('Message Title'),
+        'width' => '150',
+      ),
+      array(
+        'data' => t('Received'),
+        'width' => '145',
+      ),
+      array(
+        'data' => t('Read?'),
+        'width' => '30',
+      ),
+      array('data' => t('Operations')),
+    );
+
+    $result = drupalvb_db_query("SELECT pm.pmid, pm.userid, pm.messageread, pmtext.fromusername, pmtext.fromuserid, pmtext.title, pmtext.message, pmtext.dateline FROM {pmtext} AS pmtext LEFT JOIN {pm} AS pm ON (pm.pmtextid = pmtext.pmtextid) WHERE pm.userid = %d AND pm.folderid <> -1 ORDER BY pmtext.dateline DESC", $userinfo['userid']);
+    $res = $result->fetchAllAssoc('pmid');
+    foreach($res as $pm) {
+      $rows[] = array(
+        l($pm->fromusername, $vb_options['bburl'] . '/member.php?u=' . $pm->fromuserid),
+        l($pm->title, $vb_options['bburl'] . '/private.php?do=showpm&pmid=' . $pm->pmid),
+        date('n-d-y g:i a', $pm->dateline),
+        $pm['messageread'] ? t('Yes') : '<strong>' . t('No') . '</strong>',
+        l('reply', $vb_options['bburl'] . '/private.php?do=newpm&u=' . $pm->fromuserid),
+      );
+    }
+    $output .= theme('table', array('header' => $header, 'rows' => $rows));
+  }
+  // Deny access to a user not logged in.
+  else {
+    $output = t('You need to login to see your private messages.');
+  }
+  return $output;
+}
+
+/**
+ * Redirector for Drupal paths containing vBulletin userids.
+ *
+ * This function is useful when changing paths in vBulletin to point to Drupal
+ * module paths. For example, if you want to use the Buddylist module instead
+ * of vBulletin's buddy feature, change the link in template MEMBERINFO to
+ * <code>/drupalvb/buddy/add/$userinfo[userid]</code>.
+ * The function looks up the corresponding Drupal user and exchanges the
+ * userid, and redirects the user to the new path.
+ *
+ * @param ...
+ *   A Drupal path. Numeric path arguments will be mapped to Drupal uids.
+ */
+function drupalvb_redirect() {
+  // Keep script running even if a request was terminated to ensure user
+  // table integrity.
+  ignore_user_abort(TRUE);
+
+  $path = func_get_args();
+  foreach ($path as $key => $arg) {
+    if (is_numeric($arg) && ($uid = drupalvb_lookup_drupal_user($arg))) {
+      $path[$key] = $uid;
+    }
+  }
+
+  // Issue a 301 Moved Permanently response code to make search engines
+  // forget about the redirector page.
+  drupal_goto(implode('/', $path), array(), 301);
+}
+
+/**
+ * Lookup the corresponding Drupal uid for a vBulletin userid.
+ *
+ * If the vBulletin userid is valid, then a temporary Drupal user will be
+ * created and it's uid returned.
+ *
+ * @param $userid
+ *   A vBulletin user id.
+ * @return
+ *   The corresponding Drupal uid, if the vBulletin userid could be validated.
+ */
+function drupalvb_lookup_drupal_user($userid) {
+  module_load_include('inc', 'drupalvb');
+  // Check if this vBulletin user id already exists as Drupal user.
+  if ($uid = drupalvb_uid_load($userid)) {
+    return $uid;
+  }
+
+  // Try to lookup the user id in the vBulletin database.
+  if ($vbuser = drupalvb_db_query("SELECT userid, username, email, joindate FROM {user} WHERE userid = %d", $userid)->fetchAssoc()) {
+    // Register this user in Drupal using a temporary password, since we don't
+    // know the real one. It will be updated when the user logs in to Drupal
+    // for the first time using its vBulletin credentials.
+    // @see drupalvb_login_validate()
+    $userinfo = array(
+      'name' => $vbuser['username'],
+      'pass' => user_password(),
+      'mail' => $vbuser['email'],
+      'init' => $vbuser['username'],
+      'created' => $vbuser['joindate'],
+      'status' => 1,
+    );
+    $user = user_save('', $userinfo);
+
+    // On a heavy Drupal installation, it can happen that when a user accidently
+    // double-clicks on a redirector link we run into a timing problem:
+    // while the first request is in the middle of registering the Drupal account,
+    // the immediate second request tries to do the same again, resulting
+    // in an error.
+    if ($user->uid) {
+      watchdog('drupalvb', t('New external user: %user (unverified).', array('%user' => $user->name)), WATCHDOG_NOTICE, l(t('edit'), 'user/' . $user->uid . '/edit'));
+
+      // Update the mapping table.
+      drupalvb_set_mapping($user->uid, $vbuser['userid']);
+
+      return $user->uid;
+    }
+    // In case the user couldn't be registered, try to load it from the database.    
+    else if ($uid = drupalvb_user_load($vbuser['userid'])) {
+      return $uid;
+    }
+    // We're out of luck...
+    else {
+      watchdog('drupalvb', t('Failed to create external user: %user (unverified).', array('%user' => $vbuser['username'])), WATCHDOG_ERROR);
+    }
+  }
+  return 0;
+}
+
+/**
+ * Implements hook_privatemsg().
+ *
+ * This hack requires re-mapping of all requests for /forum/private.php to
+ * privatemsg paths using .htaccess rewrite rules. Plus, it messes around with
+ * vBulletin's pm table, which means you can't easily switch back (you have to
+ * reset that table to be able to do that).
+ *
+ * Note: message id is set to privatemsg->id + 100.000 to avoid collision with
+ * existing messages.
+ */
+function drupalvb_privatemsg($message, $op) {
+  module_load_include('inc', 'drupalvb');
+  if (!(variable_get('drupalvb_pm_sync', FALSE) && drupalvb_db_is_valid())) {
+    return;
+  }
+
+  // Shift message id to avoid overwriting existing messages.
+  $mid = $message->id + 100000;
+
+  switch ($op) {
+    case 'sent':
+      // Verify that recipient exists in vB.
+      $recipient = user_load($message->recipient);
+      if (!$userid = drupalvb_db_query("SELECT userid FROM {user} WHERE username = '%s' limit 0,1", drupalvb_htmlspecialchars($recipient->name))->fetchAssoc()) {
+        if (!$userid = drupalvb_create_user($recipient, (array) $recipient)) {
+          // Indicates duplicate username (should not happen).
+          return;
+        }
+      }
+      // pmtextid stores mapping of privatemsg id to pmid, to be able to
+      // display accurate message counts in vBulletin.
+      drupalvb_db_query("INSERT INTO {pm} (userid, pmtextid) VALUES (%d, %d)", $userid, $mid);
+      break;
+
+    case 'view':
+      // Mark as read in vBulletin.
+      drupalvb_db_query("UPDATE {pm} SET messageread = 0 WHERE pmtextid = %d", $mid);
+      break;
+
+    case 'prune':
+    case 'delete':
+      // Delete in vBulletin.
+      drupalvb_db_query("DELETE FROM {pm} WHERE pmtextid = %d", $mid);
+      break;
+  }
+}
+

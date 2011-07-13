@@ -1,0 +1,20 @@
+; $Id: drupalvb.info,v 1.4 2008/10/18 17:09:35 sun Exp $
+name = Drupal vB
+description = Integrate your Drupal site with vBulletin forums.
+core = 7.x
+
+; Information added by drupal.org packaging script on 2011-01-09
+version = "7.x-2.1"
+core = 7.x
+project = "drupalvb"
+datestamp = "1294550461"
+
+
+files[] = drupalvb.admin-pages.inc
+files[] = drupalvb.inc
+files[] = drupalvb.inc.php
+files[] = drupalvb.install
+files[] = drupalvb.module
+files[] = content_types/drupalvb_recent_posts_user.inc
+
+configure = admin/config/drupalvb

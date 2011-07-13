@@ -1,0 +1,128 @@
+// $Id: CHANGELOG.txt,v 1.63 2011/01/09 05:09:04 sun Exp $
+
+Drupal vB 6.x-2.x, xxxx-xx-xx
+-----------------------------
+
+
+Drupal vB 6.x-2.1, 2010-01-09
+-----------------------------
+#839436 by Docc: Fixed password reminder form validation.
+#350732 by sun: Fixed database connection closed even if identical to Drupal's.
+#790742 by sun: Fixed PHP 5.3 incompatibility in admin settings theme function.
+#350732 by sun: Fixed default database connection shouldn't be closed.
+#545702 by sun: Fixed fatal error on path drupalvb/logout.
+#516778 by sun: Updated installation instructions for DrupalvB.
+#380658 by sun: Fixed fatal error on path drupalvb/login.
+#364807 by sun: Fixed note about importing vBulletin users.
+#336632 by jcfiala, sun: Fixed vB cookies not removed on logout.
+#334521 by sun: Fixed fatal error on path drupalvb/logout.
+#323068 by sun: Added support for local hostnames.
+#328513 by sun: Fixed installation instructions in README.txt.
+
+
+Drupal vB 6.x-2.0, 2008-10-18
+-----------------------------
+#230678 by smk-ka, sun: Ported DrupalvB to Drupal 6.x.
+
+
+Drupal vB 5.x-2.2, 2008-10-15
+-----------------------------
+#230678 by sun: Code clean-up in preparation for the port to D6.
+#290557 by sun: Added removal of obsolete drupalvb_default_timezone variable.
+#285408 by sun: Fixed initial user import cannot happen in drupalvb.install.
+by sun: Fixed missing t() for private messages page in Drupal.
+#300835 by frando, sun: Added user import from vB for password recovery form.
+by sun: Fixed missing global $user object in forum user info block.
+#290557 by sun: Fixed bad language and timezone set for users created via
+  DrupalvB.
+#308858 by smk-ka: Fixed user sessions sometimes not properly created in
+  vBulletin due to a different vB behavior upon user login.
+#285718 by smk-ka: Added protection against timing problems on heavy Drupal
+  sites, where the redirector could try to register a user twice, resulting in
+  broken user mappings.
+#308860 by smk-ka: Added separate login/logout menu handlers to accommodate
+  different session lifetimes.
+#308857 by smk-ka: Fixed usernames containing non-latin1 characters not synced
+  due to missing encoding.
+by sun: Fixed wrong global variable name for $cookie_domain.
+
+
+Drupal vB 5.x-2.1, 2008-07-17
+-----------------------------
+#274292 by TW-IYF, sun: Fixed wrong encryption of password in vB session cookie.
+by sun: Added block displaying top forum posters.
+by smk-ka, sun: Added block and Panels content-type for displaying recent user
+  posts.
+#252677 by smk-ka, sun: Fixed wrong mapping for existing vB users after logon
+  in Drupal.
+#128322 by smk-ka, sun: Code clean-up.
+#271663 by smk-ka: Fixed join date of exported users is set to current date.
+#272845 by smk-ka, sun: Fixed switching database connector breaks vB connection.
+#272846 by smk-ka: Added removal of Drupal vB's variables in hook_uninstall().
+#271663 by sun: Updated vBulletin version compatibility note.
+
+
+Drupal vB 5.x-2.0, 2008-05-08
+-----------------------------
+#253076 by sun: Fixed database connection errors when db is not setup properly.
+#131089 by sun: Fixed dual login; unable to unserialize vB's datastore options.
+#131089 by sun: Fixed docs about cookiedomain.
+
+
+Drupal vB 5.x-2.0-RC3, 2008-05-02
+---------------------------------
+#253652 by sun: Fixed invalid passwords in vB after exporting users.
+
+
+Drupal vB 5.x-2.0-RC2, 2008-05-02
+---------------------------------
+#253652 by sun: Fixed invalid passwords in vB for new/updated/exported users.
+by sun: Code clean-up for block configuration/output.
+#253653 by sun: Added warning to user export action.
+#253521 by sun: Fixed SQL error if vB user profile contains additional fields.
+#253076 by sun: Fixed fatal error if db connection is not valid.
+#253200 by sun: Fixed missing database table prefix after upgrading to 2.x.
+#253030 by mistlethrush, sun: Fixed user passwords not updated during export.
+
+
+Drupal vB 5.x-2.0-RC1, 2008-04-30
+---------------------------------
+#121148 by sun: Added lazy instantiation of existing vB users in Drupal.
+#142368 by sun: Fixed login error if default language is not English.
+#252677 by sun: Added validation to prevent users from registering existing vB
+  usernames.
+#249901 by sun: Changed drupalvb_create/update_user() function signatures.
+Code clean-up, primarily regarding drupalvb_set_login_cookies().
+#130048 by sun: Fixed vB user creation failed due to mysql-specific function.
+Added vB variables (options) output for development/debugging.
+#177074 by sun: Fixed login to vB admin cp after user export.
+#250439 by sun: Fixed database table prefix must not be required.
+Added variable to switch db connection only when necessary.
+Fixed PHP fatal error in user export action.
+Fixed wrong include path for drupalvb.inc.php.
+Complete module re-write.
+#131877 by sun: Fixed warning messages if config.php could not be found.
+#119327 by sun: Fixed wrong forum path due to missing database access.
+#130048 by sun: Fixed fatal error on mysqli by implementing new database interface.
+#119334 by sun: Fixed SQL errors due to wrong db_url.
+#114718 by sun: Fixed table not found error due to wrong table prefix.
+
+
+Drupal vB 5.x-1.2, 2008-04-21
+-----------------------------
+#128322 by sun: Added docs about cookie domain.
+#194204 by sun: Removed positive status messages after login, registration, aso.
+#121148 by kkronyak: Fixed wrong redirection paths in drupalvb_action_handler().
+Major code clean-up.
+#205572 by sun: Fixed PHP fatal error if config.php does not exist.
+
+
+Drupal vB 5.x-1.1, 2008-02-07
+-----------------------------
+#114718 by GroteBozeWolf: Fixed vB config is only read once.
+
+
+Drupal vB 5.x-1.0, 2007-01-31
+-----------------------------
+Initial release of Drupal vB for Drupal 5.x.
+
